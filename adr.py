@@ -26,7 +26,7 @@ def convert_utc_to_ist(utc_datetime_str):
     return ist_datetime.strftime("%Y-%m-%d %H:%M:%S")
 # MongoDB connection and data fetch function
 def fetch_data_from_mongodb(tenant_id, start_date, end_date):
-    client = MongoClient("mongodb+srv://czadmin:7jjjrUB6S9tq8zOR@cluster0.0pycd.mongodb.net/chargezoneprod")
+    client = MongoClient("mongodb+srv://Ankur_shah:ankurshah123@cluster1.0pycd.mongodb.net/chargezoneprod")
     db = client['chargezoneprod']
     collection = db['chargerbookings']
 
@@ -39,7 +39,11 @@ def fetch_data_from_mongodb(tenant_id, start_date, end_date):
                 "$lt": pd.to_datetime(end_date)
             }}
         },
-    
+         {
+        "$addFields": {
+            "booking_id": {"$toString": "$_id"}   #  ye ab safely chalega
+        }
+    }, 
     {
         "$addFields": {
             "unit_consumed": {
@@ -264,31 +268,72 @@ def fetch_data_from_mongodb(tenant_id, start_date, end_date):
 
     #return list(collection.aggregate(pipeline))
     return list(collection.aggregate(pipeline, allowDiskUse=True))
+  # Mongo aggregation run
+    # mongo_data = list(collection.aggregate(pipeline, allowDiskUse=True))
+    # print("DEBUG: Total records fetched from MongoDB =", len(mongo_data))
+
+    # if len(mongo_data) > 0:
+    #     print("DEBUG: First record:", mongo_data[0])
+    # else:
+    #     print("No records found in MongoDB for given tenant/date range")
+
+    # return mongo_data   # <--- also don’t forget to return data
+  
 
 
 # Load Excel file with header row at index 2 (row 3)
 def load_excel_file(file_path):
-    return pd.read_excel(file_path, header=2)
+    return pd.read_excel(file_path, header=0)
 
 # Calculate GST(INR)
-def calculate_gst_inr(excel_data):
-    excel_data.columns = excel_data.columns.str.strip()
-    igst_col = next((col for col in excel_data.columns if 'igst' in col.lower()), None)
-    cgst_col = next((col for col in excel_data.columns if 'cgst' in col.lower()), None)
-    sgst_col = next((col for col in excel_data.columns if 'sgst' in col.lower()), None)
+ #def calculate_gst_inr(excel_data):
+#     excel_data.columns = excel_data.columns.str.strip()
+#     igst_col = next((col for col in excel_data.columns if 'igst' in col.lower()), None)
+#     cgst_col = next((col for col in excel_data.columns if 'cgst' in col.lower()), None)
+#     sgst_col = next((col for col in excel_data.columns if 'sgst' in col.lower()), None)
 
-    if igst_col and cgst_col and sgst_col:
-        excel_data[igst_col] = pd.to_numeric(excel_data[igst_col], errors='coerce').fillna(0)
-        excel_data[cgst_col] = pd.to_numeric(excel_data[cgst_col], errors='coerce').fillna(0)
-        excel_data[sgst_col] = pd.to_numeric(excel_data[sgst_col], errors='coerce').fillna(0)
+#     if igst_col and cgst_col and sgst_col:
+#         excel_data[igst_col] = pd.to_numeric(excel_data[igst_col], errors='coerce').fillna(0)
+#         excel_data[cgst_col] = pd.to_numeric(excel_data[cgst_col], errors='coerce').fillna(0)
+#         excel_data[sgst_col] = pd.to_numeric(excel_data[sgst_col], errors='coerce').fillna(0)
+#         excel_data['GST(INR)'] = (
+#             excel_data[igst_col] + excel_data[cgst_col] + excel_data[sgst_col]
+#         )
+#     else:
+#         print("Error: IGST, CGST, or SGST columns are missing in the Excel file.")
+#         return None
+
+#     return excel_data
+
+ # Convert all column names to strings (safe)
+def calculate_gst_inr(excel_data):
+
+    print("DEBUG → Excel Columns Loaded:")
+    print(list(excel_data.columns))  # 👈 add this line
+    ['Some', 'Wrong', 'Headers']
+    # Required column names
+    required_cols = ['IGST Amount(INR)', 'CGST Amount(INR)', 'SGST Amount(INR)']
+
+    # Check if all required columns exist
+    if all(col in excel_data.columns for col in required_cols):
+        # Convert to numeric safely
+        excel_data['IGST Amount(INR)'] = pd.to_numeric(excel_data['IGST Amount(INR)'], errors='coerce').fillna(0)
+        excel_data['CGST Amount(INR)'] = pd.to_numeric(excel_data['CGST Amount(INR)'], errors='coerce').fillna(0)
+        excel_data['SGST Amount(INR)'] = pd.to_numeric(excel_data['SGST Amount(INR)'], errors='coerce').fillna(0)
+
+        # Calculate GST total
         excel_data['GST(INR)'] = (
-            excel_data[igst_col] + excel_data[cgst_col] + excel_data[sgst_col]
+            excel_data['IGST Amount(INR)']
+            + excel_data['CGST Amount(INR)']
+            + excel_data['SGST Amount(INR)']
         )
     else:
         print("Error: IGST, CGST, or SGST columns are missing in the Excel file.")
         return None
 
     return excel_data
+
+
 
 # Count sessions using booking_id
 def count_sessions(mongo_data, excel_data):
@@ -307,6 +352,11 @@ def count_sessions(mongo_data, excel_data):
 # Compare totals between MongoDB and Excel
 def compare_total_units_consumed(mongo_data, excel_data):
     mongo_df = pd.DataFrame(mongo_data)
+
+      # booking_id column ka check
+    if 'booking_id' not in mongo_df.columns:
+        print(" booking_id column missing in MongoDB output. Available columns:", mongo_df.columns)
+        return
 
     # Normalize booking_id for clean comparison
     mongo_df['booking_id_str'] = mongo_df['booking_id'].astype(str).str.strip()
@@ -480,6 +530,7 @@ if __name__ == "__main__":
     print(f"\nValidation Date Range: {start_date_utc} to {end_date_utc}\n")
 
     mongo_data = fetch_data_from_mongodb(tenant_id, start_date_utc, end_date_utc)
+
     excel_data = load_excel_file(excel_file_path)
     excel_data = calculate_gst_inr(excel_data)
     if excel_data is None:
