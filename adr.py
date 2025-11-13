@@ -211,7 +211,23 @@ def fetch_data_from_mongodb(tenant_id, start_date, end_date):
             "energy_rate": { "$round": ["$invoice_data.price_per_unit", 2] },
             # "company_GST": "$invoice_data.gst_used",
             #"discount": "$invoice_data.chargecoins_used",
-            "discount": { "$round": ["$invoice_data.chargecoins_used", 2] },
+            #"discount": { "$round": ["$invoice_data.chargecoins_used", 2] },
+            "discount": {
+                    "$cond": {
+                        "if": { 
+                            "$gte": ["$booking_stop", datetime(2025, 9, 1, 0, 0, 0)]  # >= 1 Sep 2025
+                        },
+                        "then": { 
+                            "$round": [
+                                { "$divide": ["$invoice_data.chargecoins_used", 5] },
+                                2
+                            ]
+                        },
+                        "else": { 
+                            "$round": ["$invoice_data.chargecoins_used", 2]
+                     }
+                 }
+            },
             "cashback": "$invoice_data.cashback",
             #"net_amount": "$invoice_data.service_charge",
             "net_amount": { "$round": ["$invoice_data.service_charge", 2] },
